@@ -2,6 +2,7 @@
 title: 'Harvard Data Science Capstone: CYO - Bank Marketing Data Set'
 author: "Jason Baird"
 date: "May 2, 2021"
+geometry: margin=2cm
 output: 
     pdf_document:
         toc: true
@@ -240,7 +241,7 @@ Both of the categorization and scaling of features will occur once we have deter
 
 Age is actually considered a categorical variable because it is not continuous. In the following chart, we clearly outline the following: 1) The proportion of term deposit subscriptions for each age group, 2) the dashed red line represents the proportion of the total population that subscribed to a term deposit (as discussed above, the dashed red line is at 11.2%), 3) by comparing the proportion of each age group that subscribed to a term deposit to the proportion of the population that subscribed to the term deposit, we can clearly see whether specific ages effect whether or not the client will subscribe to a term deposit.
 
-```{r, echo=FALSE}
+```{r, echo=FALSE }
 ## Age
 age.table <- table(as.factor(train_set$age), train_set$y) 
 age.table.df <- as.data.frame.matrix(age.table)
