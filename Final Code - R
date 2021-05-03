@@ -19,7 +19,9 @@ library(randomForest)
 
 # Load Data
 ## Read the data
-bank_marketing_data <- read.csv("bank-additional-full.csv", stringsAsFactors = FALSE, sep = ";")
+urlfile <- "https://raw.githubusercontent.com/j21baird/Harvard-CYO---Bank-Data-Set/main/bank-additional-full.csv"
+
+bank_marketing_data <- read.csv(url(urlfile), stringsAsFactors = FALSE, sep = ";")
 
 ##Set predictor variable to categorical, since it was not imported that way
 bank_marketing_data$y <- as.factor(bank_marketing_data$y)
