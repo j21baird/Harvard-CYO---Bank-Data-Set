@@ -1,0 +1,1106 @@
+---
+title: 'Harvard Data Science Capstone: CYO - Bank Marketing Data Set'
+author: "Jason Baird"
+date: "May 2, 2021"
+output: 
+    pdf_document:
+        toc: true
+        toc_depth: 2
+        number_sections: true
+        highlight: pygments
+        keep_tex: true
+    html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = "center", cache=FALSE, cache.lazy = FALSE)
+```
+
+\newpage
+
+```{r, echo = FALSE}
+# Install all necessary libraries if it is not present
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+if(!require(stats)) install.packages("stats", repos = "http://cran.us.r-project.org")
+if(!require(pROC)) install.packages("pROC", repos = "http://cran.us.r-project.org")
+if(!require(class)) install.packages("class", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+
+# Load Packages
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(stats)
+library(pROC)
+library(class)
+library(randomForest)
+
+# Load Data
+## Read the data
+bank_marketing_data <- read.csv("bank-additional-full.csv", stringsAsFactors = FALSE, sep = ";")
+
+##Set predictor variable to categorical, since it was not imported that way
+bank_marketing_data$y <- as.factor(bank_marketing_data$y)
+```
+
+\newpage
+
+# Executive Summary
+
+The purpose of this project is to generate a classification algorithm that identifies whether or not specific bank clients will subscribe to a term deposit. The bank marketing data set contains slightly less than 42,000 observations and 21 features spanning demographic client information, marketing campaign specific data, socioeconomic data, and a few additional data points on the client. As is the case with many marketing campaigns, the success rate of subscribing to a term deposit is much lower than 50%. In fact, the average subscription rate among this population was 11.2%.
+
+Due to the disparity between subscribing and non-subscribing clients, I did not want to use accuracy as the primary metric gauging model performance. Instead, I gauged each model’s performance by the Area Under the ROC Curve (AUC) which evaluates sensitivity and specificity pairs. 
+
+In short, I ran the classification analysis on three models: 1) logistic regression, 2) KNN Clustering algorithm, and 3) Random Forest model. **The logistic regression model** was the most effective model for classifying whether a client would subscribe or not to a term deposit. **The AUC for the logistic regression was 92.4%**. 
+
+\newpage
+
+# Project Outline
+
+## Objective
+
+The bank marketing data set presents a classification analysis where the goal is to predict whether a client will subscribe a term deposit. The data provided is from a marketing campaign launched by the bank where they called various clients to promote their term deposit offering. In total, the data set contains 20 explanatory variables, an output variable, and 41,188 client observations. 
+
+The goal of this project is to uncover the explanatory variables that best predict whether a client will subscribe a term deposit, engineer those features so they are best suited for a machine learning algorithm, and then select a model that best predicts whether the client will or will not subscribe a term deposit. 
+
+## Key Metrics: Area Under Curve (AUC) 
+
+In order to attain the objective for this project, I will be using Area Under Curve to determine model selection. 
+
+***Possible Metrics for Classification Analysis***:
+
+**Accuracy** = (TP + TN)/(TP + FP + FN + TN) – this metric refers to the ratio of correctly predicted records as compared to the total number of records
+
+**Precision** =  TP/(TP + FP) – this metric refers to the ratio between the correct number of positive predictions and the total number of positive labels.
+
+**Recall (AKA Sensitivity)** – TP/(TP + FN) - this metric refers to the ratio between the correct number of positive predictions and the sum of correct positive predictions plus incorrect positive predictions.
+
+**Specificity** – TN/(TN + FP) – this metric refers to the ratio between correctly labeled negative values and the sum of correctly labeled negative values plus incorrectly labeled negative values
+
+**Area Under Curve (AUC)** – line chart where the x-axis refers to the false positive rate (1 – Specificity) and y-axis representing the true positive rate (AKA Sensitivity). The AUC is an effective metric that highlights the efficacy of a classification algorithm when it is important to balance between correctly and incorrectly classifying the target variable.  
+
+## A Quick Look at our Output Variable
+
+Since marketing campaigns are often considered extremely successful when target goals are achieved among 10 – 20% of the audience, my assumption is that the bank marketing data set’s target outcome (Term Deposit Subscription) will be disproportionate.  
+
+Prior to splitting our data, it is important to see if there is a disparity between the outcomes of our predictor variable.
+
+```{r, echo=FALSE, fig.cap="Term Deposit Subscription Counts", message=FALSE, warning=FALSE}
+ggplot(bank_marketing_data, aes(x = y)) + 
+  geom_bar()
+
+table(bank_marketing_data$y)
+```
+
+As you can see from the data above, slightly more than 11% of the bank’s clients actually subscribed to the term deposit. This means that approximately 89% of their client’s did not subscribe. 
+Since the goal of the marketing campaign algorithm is to identify clients that WILL subscribe to the bank’s term deposit but also help the marketing team prioritize clients that have a higher probability of success, it is essential that our primary metric for evaluating our algorithm focuses on both the true positive rate but not at the expense of a high false positive rate.
+
+## Model Performance & Selection: 
+
+Due to the disparity described above, accuracy is not the best measure for our algorithm. For example, **A Naïve model** using accuracy would simply classify every client as not subscribing to a term deposit and maintain an accuracy of approximately 89%.
+
+Since the **Area Under the Curve (AUC)** provides a single metric to evaluate each model that balances Sensitivity and Specificity, it is the ideal metric to be used for this classification problem. 
+
+### Types of Models to be Tested
+
+I plan on evaluating three algorithms for this project. 
+
+1)	Logistic Regression 
+2)	K Nearest Neighbors
+3)	Random Forest
+
+Each will be graded on the AUC on the test set.
+
+# Introducing the Data
+
+The Bank Marketing Data Set from the UCI Machine Learning Repository is a popular data set related with the efficacy of direct marketing campaigns on bank consumers. In short, the goal of the direct marketing campaign was to contact bank clients in hopes that they would open a new term deposit. 
+
+## Target Variable
+
+Our output variable is a binary categorical variable. It specifies whether a client has subscribed to a term deposit or not. 
+
+21 - y - has the client subscribed a term deposit? (binary: 'yes','no')
+
+## Explanatory Variables 
+
+Since we are working with marketing data, it is important to understand how our twenty explanatory variables can be grouped into different types of relevancy to our marketing campaign dataset: 
+
+### Audience Demographic Data
+Every marketing campaign deals with audience segmentation. Audience segmentation refers to the different demographics groups of an audience and how those groups are affected by the marketing campaign. It is in this component that the bank will determine which members of their client base should receive the marketing campaign’s message. Here are some of the relevant audience demographics from the data set. 
+
+1 - age (numeric)\
+2 - job: type of job (categorical: 'admin.', 'blue-collar', 'entrepreneur', 'housemaid', 'management', 'retired', 'self-employed', 'services', 'student', 'technician', 'unemployed', 'unknown')\
+3 - marital: marital status (categorical: 'divorced', 'married', 'single', 'unknown'; note: 'divorced' means divorced or widowed)\
+4 - education (categorical: 'basic.4y', 'basic.6y', 'basic.9y', 'high.school', 'illiterate', 'professional.course', 'university.degree', 'unknown')
+
+Additionally, the bank has unique information on its clients which it leverages for this marketing campaign. By adding the client-specific data to the audience demographics, the bank can further segment its audience.
+
+5 - default: has credit in default? (categorical: 'no', 'yes',' unknown')\
+6 - housing: has housing loan? (categorical: 'no', 'yes', 'unknown')\
+7 - loan: has personal loan? (categorical: 'no', 'yes', 'unknown')\
+
+### Campaign-Specific Features
+
+In addition to the demographic and client data, the bank has recorded various metrics on their marketing campaign. This following variables provided in the data set reference the campaign-specific features.
+
+8 - contact: contact communication type (categorical: 'cellular', 'telephone')\
+9 - month: last contact month of year (categorical: 'jan', 'feb', 'mar', ..., 'nov', 'dec')\
+10 - day_of_week: last contact day of the week (categorical: 'mon','tue','wed','thu','fri')\
+11 - duration: last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.\
+
+### Additional attributes
+
+The following additional attributes are associated with the data set.
+
+12 - campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)\
+13 - pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)\
+14 - previous: number of contacts performed before this campaign and for this client (numeric)\
+15 - poutcome: outcome of the previous marketing campaign (categorical: 'failure','nonexistent','success')\
+
+### Social and Economic Context Variables 
+
+16 - emp.var.rate: employment variation rate - quarterly indicator (numeric)\
+17 - cons.price.idx: consumer price index - monthly indicator (numeric)\
+18 - cons.conf.idx: consumer confidence index - monthly indicator (numeric)\
+19 - euribor3m: euribor 3 month rate - daily indicator (numeric)\
+20 - nr.employed: number of employees - quarterly indicator (numeric)\
+
+
+# Obtaining the Data
+
+## Loading the Data
+
+The data can be obtained by searching for the bank marketing data set on the UCI Machine Learning Repository. I am using the most updated data set from the data folder, the “bank-additional” file.
+
+## Splitting the Data into Train and Test Data Sets
+Since we are dealing with a data set that has a significant amount of observations, we will split the training data set into 80% of the total observations and test set will be comprised of 20% of the data from the original data set.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(y = bank_marketing_data$y, times = 1, p = 0.2, list = FALSE)
+train_set <- bank_marketing_data[-test_index,]
+test_set <- bank_marketing_data[test_index,]
+```
+
+The 80/20 split provides the following dimensions for each of the new data sets.
+
+```{r, echo=TRUE}
+dim(train_set)
+dim(test_set)
+```
+
+Important: It is essential that we check that the split is stratified. This is an important concept that helps us ensure our data is not overfit. In both the training and test dataset we can see that 11% of the observations subscribe to a term deposit. 
+
+```{r, echo=FALSE}
+table(train_set$y)
+
+table(test_set$y)
+
+```
+
+# Exploratory Data Analysis
+
+## Check for missing values
+
+The first step I take in any data analysis is determining whether there is or is not missing values. This is a critical step since machine learning algorithms cannot work when there are missing values.
+
+```{r, echo=FALSE}
+sum(complete.cases(train_set))
+sum(complete.cases(test_set))
+```
+
+Fortunately, there is no missing values in this data set. Therefore, we will not need to impute any of the values for the data. 
+
+## Look at the first several rows of data
+
+```{r, echo=FALSE}
+head(train_set)
+```
+
+We can see from looking at the first several rows of data that a lot of this data needs to be turned into factors. And, upon closer inspection of the data dictionary listed above, we can easily determine the categories in each feature. due to the large ranges associated with some of the numeric values, we may need to normalize and scale our numeric vectors for some of our models. Specifically, we will need to normalize our data for models that rely on distance
+
+## Summary of each Variable
+
+```{r, echo=FALSE}
+summary(train_set)
+```
+
+One thing that jumps at me from the summary, is that some of the numeric variables in this data set have large ranges vs. others that have very small min-max range. Due to the variance in feature ranges with some of the numeric values, we may need to normalize and scale our numeric vectors for some of our models. Specifically, we will need to normalize our data for models that rely on distance
+
+Both of the categorization and scaling of features will occur once we have determined the variables to use in our algorithms. 
+
+# Feature Selection Analysis
+
+## Demographic Data Feature Analysis 
+
+### Age vs Term Deposit
+
+Age is actually considered a categorical variable because it is not continuous. In the following chart, we clearly outline the following: 1) The proportion of term deposit subscriptions for each age group, 2) the dashed red line represents the proportion of the total population that subscribed to a term deposit (as discussed above, the dashed red line is at 11.2%), 3) by comparing the proportion of each age group that subscribed to a term deposit to the proportion of the population that subscribed to the term deposit, we can clearly see whether specific ages effect whether or not the client will subscribe to a term deposit.
+
+```{r, echo=FALSE}
+## Age
+age.table <- table(as.factor(train_set$age), train_set$y) 
+age.table.df <- as.data.frame.matrix(age.table)
+age.table.df$age <- rownames(age.table.df)
+
+age.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(age, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on age") + 
+  xlab("Age") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+```
+
+As you can see in the above chart, age clearly plays a role in whether a client will or will not subscribe to a term deposit. In this chart we can see that the top 14 age categories most likely to subscribe to a term deposit are above the age of 64. The next best category is the group at age 17.  Additionally, this bar chart indicates that individuals with ages between 35 and 55 are less likely to subscribe to a term deposit. 
+
+```{r, echo=FALSE}
+age.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(age, no, yes, perc, total)
+```
+
+The custom contingency table further explains the bar charts findings, but also provides more insight into the total number of clients in each age group. While clients under the age of 30 and clients over the age of 59 are more likely to subscribe to a term deposit, the bulk of clients the bank reached out to are between the ages of 30 and 59. These clients are much less likely to open a term deposit.  
+
+**In summary, age is an extremely important variable that should be included in the final model.**
+
+### Job Variable vs. Term Deposit
+
+The following table and chart highlight a significant amount of variability among the likelihood a person with a specific job will subscribe to the data.
+
+First, if you look at the following bar chart, we see the following. 1) the dashed redline represents the proportion of the total population that subscribed to a term deposit at approximately 11%. 2) For each segment of the population based on job title, we can see the percent likelihood an individual with that title will subscribe to a loan deposit. As you can see, students and retired individuals are more than 2x likely to sign up for a term deposit versus the population, while blue-collar and services jobs are half as likely to subscribe to a term deposit.
+
+```{r, echo=FALSE}
+## Job vs Term Deposit Analysis
+job.table <- table(as.factor(train_set$job), train_set$y) 
+job.table.df <- as.data.frame.matrix(job.table)
+job.table.df$jobs <- rownames(job.table.df)
+
+job.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(jobs, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per job") + 
+  xlab("Job Category") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+Second, if we compare the bar chart data to the custom contingency table below, we can see the total number of clients per category. This gives us a rough idea of how much each job segment plays a role in terms of total sign ups. 
+
+```{r, echo=FALSE}
+job.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(jobs, no, yes, perc, total)
+```
+
+**In summary, Job title seems to be a good indication of whether a client subscribes or does not. This should be included in our model.**
+
+### Marital Status vs. Term Deposit
+
+Once again, we are looking at a bar chart and custom contingency table to determine how much variability occurs between marital status and our term deposit target variable. 
+
+The bar chart shows that single and unknown marital statuses are more likely than the population average (red dashed line at 11.2%) to open a term deposit than divorced and married individuals. However, both the contingency table and bar chart do not highlight a significant amount of variability stemming from this variable.
+
+```{r, echo=FALSE}
+## Marital Status
+marital.table <- table(as.factor(train_set$marital), train_set$y) 
+marital.table.df <- as.data.frame.matrix(marital.table)
+marital.table.df$status <- rownames(marital.table.df)
+marital.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+marital.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per marital status") + 
+  xlab("Marital Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+```
+
+**I do not think we should include this variable in our model.**
+
+### Education vs Term Deposit
+
+Education does seem to play a larger role than marital status in discovering some of the variability of term deposit success rate. Specifically, individuals classified as illiterate and unknown educations are more likely to sign up for a term deposit. It is worth noting that illiterate classification (the, by far, most likely to subscribe) only accounts for 14 of the 32,950 clients in the bank database. Also noteworthy, people with 6 year and 9 year educations are significantly less likely to subscribe.
+
+```{r, echo=FALSE}
+## Education
+education.table <- table(as.factor(train_set$education), train_set$y) 
+education.table.df <- as.data.frame.matrix(education.table)
+education.table.df$status <- rownames(education.table.df)
+education.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+education.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per education level") + 
+  xlab("Education Level") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+```
+
+In total 6 year, 9 year, unknown, and illiterate education classifications account for 24.37% of the total population. While this variance isn’t dramatic, it will probably help us classify term deposit subscriptions.
+
+**We will include this variable in our classification model.**
+
+### Default vs Term Deposit
+
+My initial thoughts are that this will be an important variable. Since loan defaults refer to an individual’s inability to pay back loans, it implies that the individual does not have enough funds to open new term deposits. 
+
+```{r, echo=FALSE}
+## Default
+default.table <- table(as.factor(train_set$default), train_set$y) 
+default.table.df <- as.data.frame.matrix(default.table)
+default.table.df$status <- rownames(default.table.df)
+default.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+default.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits with and without loan defaults") + 
+  xlab("Default Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+```
+
+As predicted, clients without loan defaults were more likely to have the funds to open a term deposit with the bank. Clients with unknown status open term deposits at less than 50% the rate of the population. I was surprised that so few clients showed definitive loan defaults. 
+
+**This variable should definitely be added to the model.**
+
+### Housing vs Term Deposit
+
+```{r, echo=FALSE}
+housing.table <- table(as.factor(train_set$housing), train_set$y) 
+housing.table.df <- as.data.frame.matrix(housing.table)
+housing.table.df$status <- rownames(housing.table.df)
+housing.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+housing.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients with house loans") + 
+  xlab("Housing Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+**Do not include this variable. Very static among the different categories.**
+
+### Personal Loan vs Term Deposit
+
+```{r, echo=FALSE}
+## Loan
+loan.table <- table(as.factor(train_set$loan), train_set$y) 
+loan.table.df <- as.data.frame.matrix(loan.table)
+loan.table.df$status <- rownames(loan.table.df)
+loan.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+loan.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients with personal loans") + 
+  xlab("Loan Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+**Do not include this variable. Very static among the different categories of this feature.** 
+
+## Campaign Data Feature Analysis 
+
+### Contact Type vs Term Deposit
+
+To my surprise, the type of audio device that the marketing team connected with does seem to play a role in determining whether or not an individual will subscribe to a term deposit. As you can see in the below chart and contingency table, clients reached on telephone only signed up to a term deposit 5.12% of the time. This is less than 50% of the population’s average subscription rate.
+
+```{r, echo=FALSE}
+## Contact
+contact.table <- table(as.factor(train_set$contact), train_set$y) 
+contact.table.df <- as.data.frame.matrix(contact.table)
+contact.table.df$status <- rownames(contact.table.df)
+contact.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+contact.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on contact type") + 
+  xlab("Contact Type") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+**Definitely include this variable in the model.**
+
+### Last month reached vs Term Deposit
+
+First, it is important to note that the marketing team did not reach out to any clients in the months of January and February. 
+
+```{r, echo=FALSE}
+## Month
+month.table <- table(as.factor(train_set$month), train_set$y) 
+month.table.df <- as.data.frame.matrix(month.table)
+month.table.df$status <- rownames(month.table.df)
+month.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+month.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on last month of year that they were reached") + 
+  xlab("Month") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+Not including those two months, the data shows a success rate of nearly 4x the number of subscriptions in March, December, September, and October as compared with the average rate of success from the population. Additionally, the late Spring and Summer months do not seem to be successful in generating term deposit subscriptions.
+
+**Definitely include this variable in the model.** 
+
+### Last contact Day of the Week vs Term Deposit
+
+```{r, echo=FALSE}
+## Day_of_week
+day_of_week.table <- table(as.factor(train_set$day_of_week), train_set$y) 
+day_of_week.table.df <- as.data.frame.matrix(day_of_week.table)
+day_of_week.table.df$status <- rownames(day_of_week.table.df)
+day_of_week.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+day_of_week.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on last contact day of week that they were reached") + 
+  xlab("Day of Week") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+**This variable does not highlight much variability from the population subscription rate.**
+
+### Duration of the Last Call vs. Term Deposits
+
+Surprisingly, this is the first continuous variable we have seen in the data set. This variable references the length of the last phone call with a client and is measured in seconds. A box and whiskers plot is an effective way to compare continuous and categorical variables.
+
+As you can see from the box and whisker plot below, there is not much overlap between the duration of calls for people who subscribed and people who did not subscribe. This highlights that individuals that did subscribe to the term deposit were much more likely to have a longer discussion with a member of the marketing team.
+
+```{r, echo=FALSE}
+train_set %>%
+  ggplot(aes(x=y, y=duration)) + 
+  geom_boxplot() + 
+  ggtitle("Duration of last call vs Term Deposit Subscription") + 
+  xlab("Subscribed to Term Deposit") +
+  ylab("Duration of Last Call")
+```
+
+In fact, we can summarize the duration values associated with the box plot for the status of a term deposit. As you can see below, the first quartile for duration from clients that DID subscribe is 254 seconds. The third quartile for duration from clients that DID NOT subscribe was 278 seconds. This highlights the gap in duration between the two term deposit statuses. Essentially, a little more than 25% of the DID NOT Subscribe call durations overlap with a little less than 75% of the DID Subscribe call durations.
+
+```{r, echo=TRUE}
+### calculated summary of duration when y == yes
+summary(train_set$duration[train_set$y=="yes"])
+### total number of subscriptions for perspective
+train_set %>%
+  filter(y == "yes") %>%
+  summarize(total = n())
+### calculated summary of duration when y == no
+summary(train_set$duration[train_set$y=="no"])
+### Total number of non-subscriptions for perspective
+train_set %>%
+  filter(y == "no") %>%
+  summarize(total = n())
+
+```
+
+**This is going to be a very important variable in our model.**
+
+##Additional Data Feature Analysis 
+
+###Number of Times Contacted throughout Campaign vs Term Deposit
+
+As the number of contacts throughout the campaign increased, the probability of the client subscribing to a term deposit decreases. 
+
+```{r, echo=FALSE}
+## Campaign
+campaign.table <- table(as.factor(train_set$campaign), train_set$y) 
+campaign.table.df <- as.data.frame.matrix(campaign.table)
+campaign.table.df$status <- rownames(campaign.table.df)
+campaign.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+campaign.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients number of contacts for the campaign") + 
+  xlab("Number of Contacts throughout the Campaign") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+It is definitely worth including this variable, but we can consolidate some of the categories in to new groups. This will be addressed in the feature engineering component of the report. 
+
+### Number of days passed since the client was last contacted vs Term Deposit
+
+The first step in this analysis is to understand how the data is distributed for this variable. A simple histogram shows two modes and a large gap between the number of days. The first mode is from 0 – 50 days since the previous contact. The second mode is at 999, which is described as a value for the client never having been contacted.
+
+```{r, echo=FALSE}
+hist(train_set$pdays)
+```
+
+
+Now lets look at the data which does not include clients who were never contacted. As you can see of the clients that were contacted, it seems that the maximum amount of days since contact is around 30. 
+
+```{r, echo=FALSE}
+### review distribution when removing value 999
+train_set %>%
+  filter(pdays < 950) %>%
+  ggplot(aes(pdays)) +
+  geom_histogram()
+```
+
+Additionally, we can facet this chart by our outcome variable. The below histogram highlights that individuals have been contacted by another campaign are more likely to subscribe to a term deposit. 
+
+```{r, echo=FALSE}
+train_set %>%
+       filter(pdays < 950) %>%
+       ggplot(aes(pdays)) +
+       geom_histogram() + 
+       facet_wrap(~ y)
+```
+
+Finally, we can categorize the pdays variable into smaller segments and obtain the proportion of clients per segment that are likely to subscribe to the term deposit. For the sake of the data exploration, I have created a unique variable to store this data. I will make the final changes should this variable be considered in the final algorithm.
+
+```{r, echo=FALSE}
+### For exploratory purposes, create a new data frame with pdays categorized and include predicted outcome variable
+test <- train_set %>%
+  mutate(pdays_category = ifelse(pdays <= 5, "5 days or less", 
+                          ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+                          ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+                          ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted"))))) %>%
+  select(pdays_category, y)
+
+### Review categorized effect on subscribing to term deposit
+test.table <- table(as.factor(test$pdays_category), test$y) 
+test.table.df <- as.data.frame.matrix(test.table)
+test.table.df$status <- rownames(test.table.df)
+test.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+test.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs days since last contact") + 
+  xlab("days since last contact") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+**Summary – while a vast majority of clients were never contacted by another campaign. We can see that those who have been contacted are much more likely to subscribe to a term deposit. This variable should definitely be included in our model.**
+
+###Number of contacts prior to this campaign vs. Term Deposit
+
+```{r, echo=FALSE}
+### boxplot comparing number of contacts before vs term deposit
+train_set %>%
+  ggplot(aes(x=y, y=previous)) + 
+  geom_boxplot() + 
+  ggtitle("Number of contacts performed before campaign vs Term Deposit Subscription") + 
+  xlab("Subscribed to Term Deposit") +
+  ylab("Number of contacts")
+```
+
+**Since the median values are both 0 and little variance in t his chart, I assume this variable does not impact term deposits.**
+
+### Comparing the success of previous campaigns per client vs Term Deposit
+
+The following chart shows a significant correlation between clients with prior marketing campaign success and opening a term deposit. This variable should be included in the model. 
+
+```{r, echo=FALSE}
+##poutcome
+poutcome.table <- table(as.factor(train_set$poutcome), train_set$y) 
+poutcome.table.df <- as.data.frame.matrix(poutcome.table)
+poutcome.table.df$status <- rownames(poutcome.table.df)
+poutcome.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+poutcome.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs Prior Marketing Campaign Success") + 
+  xlab("Success of prior campaigns") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+```
+
+## Socioeconomic Data Feature Analysis 
+
+As you can see from the following box and whisker plots, there is not much variation in the data among the socioeconomic data features and term deposits.
+
+```{r, echo=FALSE}
+## Emplyment variation Rate
+train_set %>%
+  ggplot(aes(x=y, y=emp.var.rate)) + 
+  geom_boxplot() +
+  ggtitle("Employment Variation Rate vs Term Deposit")
+  
+## Consumer Price Index
+train_set %>%
+  ggplot(aes(x=y, y=cons.price.idx)) + 
+  geom_boxplot() +
+  ggtitle("Consumer Price Index vs Term Deposit")
+
+## Consumer Confidence Index
+train_set %>%
+  ggplot(aes(x=y, y=cons.conf.idx)) + 
+  geom_boxplot() + 
+  ggtitle("Consumer Confidence Index vs Term Deposit")
+
+## Euribor 3 Month Rate
+train_set %>%
+  ggplot(aes(x=y, y=euribor3m)) + 
+  geom_boxplot() + 
+  ggtitle("Euribor 3 Month Rate vs Term Deposit")
+
+## Number of Employees
+train_set %>%
+  ggplot(aes(x=y, y=nr.employed)) + 
+  geom_boxplot() + 
+  ggtitle("Number of Employees vs Term Deposit")
+```
+
+**One variable that jumps out to me is the Euribor 3 Month Rate. The median values are at opposite ends and may be considered in our model.** 
+
+# Feature Selection & Engineering
+
+## Selecting the Important Variables
+
+Based on the prior exploratory analysis, I was able to remove 9 explanatory variables from both the training and test data sets.
+
+Here are the remaining variables and what needs to be done to ready for algorithm training:
+
+1)	Age – currently an integer variable which we will use as a categorical variable – also need to classify all ages over 86 as one variable to ensure that this variable accounts for all age groups.
+2)	Job – must convert to factor
+3)	Education – must convert to factor
+4)	Default – must convert to factor
+5)	Contact – must convert to factor
+6)	Month – must convert to factor
+7)	Duration – integer value in seconds. For some models will need to apply scaling and normalization
+8)	Campaign – integer value. For some models will need to apply scaling and normalization
+9)	Pdays – currently an integer that needs to be converted to a factor variable with levels displayed in exploratory analysis
+10)	Poutcome – convert to factor
+11)	Euribor3m – integer value. For some models will need to apply scaling and normalization.
+
+These changes should be applied on both the train and test data sets. 
+
+```{r, echo=TRUE}
+## Train Set 
+train_set_mini <- train_set %>%
+     select(age, job, education, default, contact, month, duration, campaign, pdays, poutcome, euribor3m, y)
+## Test Set
+test_set_mini <- test_set %>%
+  select(age, job, education, default, contact, month, duration, campaign, pdays, poutcome, euribor3m, y)
+
+```
+
+## Feature Engineering
+
+### Converting to Categorical Data
+
+Here is the code for converting each of our character vectors to the appropriate factor.
+
+```{r, echo=TRUE}
+## basic conversion to categorical data
+train_set_mini$job <- as.factor(train_set_mini$job)
+train_set_mini$education <- as.factor(train_set_mini$education)
+train_set_mini$default <- as.factor(train_set_mini$default)
+train_set_mini$contact <- as.factor(train_set_mini$contact)
+train_set_mini$month <- as.factor(train_set_mini$month)
+train_set_mini$poutcome <- as.factor(train_set_mini$poutcome)
+
+test_set_mini$job <- as.factor(test_set_mini$job)
+test_set_mini$education <- as.factor(test_set_mini$education)
+test_set_mini$default <- as.factor(test_set_mini$default)
+test_set_mini$contact <- as.factor(test_set_mini$contact)
+test_set_mini$month <- as.factor(test_set_mini$month)
+test_set_mini$poutcome <- as.factor(test_set_mini$poutcome)
+```
+
+### Engineering Age Category
+
+Three problems occurred due to specifying age as a category for every possible age in the training set:
+
+1) Some of the older clients in the 80+ category were not represented in the test set which would cause errors because our model had not seen those values before.
+
+2) There are much fewer older and younger clients than clients between 30 and 50, which could cause the training data to be over fit to specific ages. For example, only one 91 year old was in the training set who did not subscribe vs one 94 year old who did subscribe to the term deposit – categorizing by unique age would most likely overweight the likelihood that a 91 year old would not subscribe and a 94 year old will subscribe even though there isn’t much difference in age.
+
+3) By reducing the number of age categories from each unique age to age groups, I am able to reduce the number of factor levels evaluated in each model. By reducing from 76 categories for age to 14 age categories, the models should run faster. 
+
+```{r, echo=FALSE}
+### Age
+train_set_mini <- train_set_mini %>%
+  mutate(age_cat = ifelse(age > 13 & age <= 19, "teen",
+                          ifelse(age >= 20 & age <= 25, "20-25",
+                                 ifelse(age >= 26 & age <= 30, "26-30",
+                                        ifelse(age >= 31 & age <= 35, "31-35",
+                                               ifelse(age >= 36 & age <= 40, "36-40",
+                                                      ifelse(age >= 41 & age <= 45, "41-45",
+                                                             ifelse(age >= 46 & age <= 50, "46-50",
+                                                                    ifelse(age >= 51 & age <= 55, "51-55",
+                                                                           ifelse(age>= 56 & age<= 60, "56-60", 
+                                                                                  ifelse(age >= 61 & age <= 65, "61-65",
+                                                                                         ifelse(age >= 66 & age <= 70, "66-70",
+                                                                                                ifelse(age >= 71 & age <=75, "71-75",
+                                                                                                       ifelse(age>= 76 & age<= 80, "79-80", "Over 80"))))))))))))))
+### Did we lose much variability with our new categorical age variable?
+### Age_cat
+age_cat.table <- table(as.factor(train_set_mini$age_cat), train_set_mini$y) 
+age_cat.table.df <- as.data.frame.matrix(age_cat.table)
+age_cat.table.df$status <- rownames(age_cat.table.df)
+age_cat.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+age_cat.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs Age Category") + 
+  xlab("Age Category") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+### Apply to test set
+test_set_mini <- test_set_mini %>%
+  mutate(age_cat = ifelse(age > 13 & age <= 19, "teen",
+                          ifelse(age >= 20 & age <= 25, "20-25",
+                                 ifelse(age >= 26 & age <= 30, "26-30",
+                                        ifelse(age >= 31 & age <= 35, "31-35",
+                                               ifelse(age >= 36 & age <= 40, "36-40",
+                                                      ifelse(age >= 41 & age <= 45, "41-45",
+                                                             ifelse(age >= 46 & age <= 50, "46-50",
+                                                                    ifelse(age >= 51 & age <= 55, "51-55",
+                                                                           ifelse(age>= 56 & age<= 60, "56-60", 
+                                                                                  ifelse(age >= 61 & age <= 65, "61-65",
+                                                                                         ifelse(age >= 66 & age <= 70, "66-70",
+                                                                                                ifelse(age >= 71 & age <=75, "71-75",
+                                                                                                       ifelse(age>= 76 & age<= 80, "79-80", "Over 80"))))))))))))))
+
+```
+
+Additionally, when comparing the new age category variable to the unique ages we still see a significant amount of variability explained for each age segment while reducing the likelihood of overfitting. 
+
+### Engineering pdays
+
+Here is the code to convert pdays into a categorical variable:
+
+```{r, echo=TRUE}
+### PDAYS
+train_set_mini <- train_set_mini %>%
+  mutate(pdays_category = 
+      ifelse(pdays <= 5, "5 days or less", 
+       ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+        ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+         ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted")))))
+
+### apply to test set
+test_set_mini <- test_set_mini %>%
+  mutate(pdays_category = 
+    ifelse(pdays <= 5, "5 days or less", 
+     ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+      ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+       ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted")))))
+
+```
+
+### Convert age category and pdays category to factors and remove age and pdays from both train and test mini data sets
+
+```{r, echo=TRUE}
+## Convert age and pdays categories to factors on both train and test mini data sets
+train_set_mini$age_cat <- as.factor(train_set_mini$age_cat)
+test_set_mini$age_cat <- as.factor(test_set_mini$age_cat)
+train_set_mini$pdays_category <- as.factor(train_set_mini$pdays_category)
+test_set_mini$pdays_category <- as.factor(test_set_mini$pdays_category)
+
+## Remove age and pdays from both train and test data sets
+train_set_mini <- train_set_mini[,-c(1,9)]
+test_set_mini <- test_set_mini[,-c(1,9)]
+```
+
+## Normalizing numeric features
+
+Since some of the algorithms I plan to use are distance-based and apply gradient descent as an optimization technique, it is essential that I scale the numeric features so that each feature is on a similar scale. 
+
+### Normalization
+
+The approach I plan to use for feature scaling is min-max normalization. Here is the equation for min-max normalization:
+
+$$X_{new} = (X  –  X_{min})/(X_{max}  –  X_{min})$$ 
+
+This formula will scale each feature to be a value between 0 and 1.
+The three features requiring normalization
+
+1)	Duration 
+2)	Campaign
+3)	Euribor3m
+
+Here is the normalization code:
+
+```{r, echo=TRUE}
+## Normalization of Numeric Features
+min_duration <- min(train_set_mini$duration)
+max_duration <- max(train_set_mini$duration)
+min_campaign <- min(train_set_mini$campaign)
+max_campaign <- max(train_set_mini$campaign)
+min_euribor3m <- min(train_set_mini$euribor3m)
+max_euribor3m <- max(train_set_mini$euribor3m)
+
+train_set_mini <- train_set_mini %>%
+  mutate(duration_norm = (duration - min_duration)/(max_duration - min_duration),
+         campaign_norm = (campaign - min_campaign)/(max_campaign - min_campaign),
+         euribor3m_norm = (euribor3m - min_euribor3m)/(max_euribor3m - min_euribor3m))
+
+test_set_mini <- test_set_mini %>%
+  mutate(duration_norm = (duration - min_duration)/(max_duration - min_duration),
+         campaign_norm = (campaign - min_campaign)/(max_campaign - min_campaign),
+         euribor3m_norm = (euribor3m - min_euribor3m)/(max_euribor3m - min_euribor3m))
+
+train_set_mini <- train_set_mini[,-c(6,7,9)]
+test_set_mini <- test_set_mini[,-c(6,7,9)]
+```
+
+# Model Evaluation
+
+## Logistic Regression
+
+### Training the Logistic Regression
+
+Since I’ve already gone through the process of feature selection, engineering, and normalization, the training data is ready to teach our logistic regression. Here is the code:
+
+```{r, echo=TRUE}
+## Logistic Regression
+logistic.train <- glm(y ~ ., data = train_set_mini, family = "binomial")
+
+```
+
+Additionally, we can get greater insight on the quality of our predictor variables by summarizing the logistic regression model.
+
+```{r, echo=TRUE}
+summary(logistic.train)
+```
+
+It genuinely seems that the predictor variables included in this model are appropriate for the algorithm. In fact each of the categorical variables and all three of the numeric variables have low p-values  and have high slopes associated with the variable. 
+
+### Evaluating AUC
+
+```{r, echo=FALSE}
+## predicting model on test data set
+logistic.predict <- test_set_mini
+logistic.predict$y_hat <- predict(logistic.train, newdata = test_set_mini, type = "response")
+
+## plotting AUC
+par(pty="s")
+roc_logistic <- roc(logistic.predict$y ~ logistic.predict$y_hat, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "blue", lwd = 4, print.auc =TRUE, print.auc.x=45)
+roc_logistic
+
+```
+
+The logistic regression model provided an AUC of 92.4%. This makes it a very good model, especially in terms of balancing Sensitivity and Specificity.
+
+## KNN Algorithm
+
+The KNN algorithm uses distance to classify variables into groups. Since it’s primary use is for classification, I thought it would be an appropriate algorithm for this data set. 
+
+The KNN algorithm requires categorical variables to be stored as numerical values. So the following code converts each factor to a numeric. In addition, I’ve already scaled the numeric variables.
+
+```{r, echo=TRUE}
+### first we must convert all of our factor variables to numeric variables for the knn model
+knn_train_set_mini <- train_set_mini
+knn_test_set_mini <- test_set_mini
+
+knn_train_set_mini$job <- as.numeric(knn_train_set_mini$job)
+knn_train_set_mini$education <- as.numeric(knn_train_set_mini$education)
+knn_train_set_mini$default <- as.numeric(knn_train_set_mini$default)
+knn_train_set_mini$contact <- as.numeric(knn_train_set_mini$contact)
+knn_train_set_mini$month <- as.numeric(knn_train_set_mini$month)
+knn_train_set_mini$poutcome <- as.numeric(knn_train_set_mini$poutcome)
+knn_train_set_mini$y <- as.numeric(knn_train_set_mini$y)
+knn_train_set_mini$age_cat <- as.numeric(knn_train_set_mini$age_cat)
+knn_train_set_mini$pdays_category <- as.numeric(knn_train_set_mini$pdays_category)
+
+knn_test_set_mini$job <- as.numeric(knn_test_set_mini$job)
+knn_test_set_mini$education <- as.numeric(knn_test_set_mini$education)
+knn_test_set_mini$default <- as.numeric(knn_test_set_mini$default)
+knn_test_set_mini$contact <- as.numeric(knn_test_set_mini$contact)
+knn_test_set_mini$month <- as.numeric(knn_test_set_mini$month)
+knn_test_set_mini$poutcome <- as.numeric(knn_test_set_mini$poutcome)
+knn_test_set_mini$y <- as.numeric(knn_test_set_mini$y)
+knn_test_set_mini$age_cat <- as.numeric(knn_test_set_mini$age_cat)
+knn_test_set_mini$pdays_category <- as.numeric(knn_test_set_mini$pdays_category)
+```
+
+Finally, we convert the knn model predictions to probabilities that can be interpreted by the roc function. 
+
+```{r, echo=TRUE}
+### Run and Plot AUC for KNN Algorithm
+knn_model <- knn(train = knn_train_set_mini, test = knn_test_set_mini, cl = knn_train_set_mini$y, k = 10, prob = TRUE)
+knn_prob <- attr(knn_model, "prob")
+knn_prob <- 2*ifelse(knn_model == "-1", 1-knn_prob, knn_prob) - 1
+```
+
+### Evaluating AUC
+
+```{r, echo=FALSE}
+roc_knn <- roc(knn_test_set_mini$y ~ knn_prob, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "green", lwd = 4, print.auc =TRUE, print.auc.x=45)
+roc_knn
+```
+
+The AUC for the KNN clustering algorithm is 91.3%. While very good, it performs slightly worse than the logistic regression algorithm.
+
+## Random Forest
+
+One of the best features of the random forest model is that it provides a unique list of variable importance to the model. Here is the plot of the results:
+
+```{r, echo=FALSE}
+##Random Forest Model
+model.randomforest <- randomForest(y ~ ., data = train_set_mini )
+## measure variable importance from random Forest
+varImpPlot(model.randomforest)
+```
+
+Here is the AUC for the Random Forest model. As you can see the Random Forest has an AUC of 75.4% and is the worst performing algorithm. We can tune the parameters of the Random Forest to improve this score, but logistic regression has a great AUC and I am happy with that algorithm. 
+
+```{r, echo=FALSE}
+## predict on new test set
+rf_test_set_mini <- test_set_mini
+rf_test_set_mini <- rbind(train_set_mini[1,], rf_test_set_mini)
+rf_test_set_mini <- rf_test_set_mini[-1,]
+rf.predict <- predict(model.randomforest, newdata = rf_test_set_mini[,-7])
+rf.predict <- as.numeric(rf.predict)
+roc_randomforest <- roc(rf_test_set_mini$y ~ rf.predict, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "red", lwd = 4, print.auc =TRUE)
+
+## Random Forest AUC
+roc_randomforest
+```
+
+## Comparing each of the AUCs on one graph.
+
+I’ve drawn and printed the AUC for each of the models I’ve run. Here are the results.
+
+```{r, echo=FALSE}
+## Comparing AUCs for the three models
+plot(roc_logistic, col = "blue", main = "ROC", legacy.axes = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", print.auc = TRUE)
+plot(roc_knn, col = "red", add = TRUE, print.auc = TRUE, print.auc.y = 42)
+plot(roc_randomforest, col = "#228B22", add = TRUE, print.auc = TRUE, print.auc.y = 33)
+```
+
+Note: Blue = Logistic Regression, Red = KNN Clustering, Green = Random Forest
+
+While this isn’t anything new, it is always good to visualize the AUC as compared to the various models. As you can see, the logistic regression provides us with the greatest AUC and should be selected as the final model.
+
+# Conclusion:  Logistic Regression for the Win
+
+Oftentimes, feature engineering and variable selection are the most important traits of a machine learning algorithm. They are always the most impactful components of less complex models like logistic regression. This is the case for the bank marketing data set. 
+
+***What the marketing team knows now***
+
+First, the marketing team has a way of classifying their clients for a marketing campaign and will help them focus their efforts on the right audience. This will provide the team with better results moving forward while allowing them to reduce resources allocated to the campaign (if they call a more targeted list of clients with fewer campaign participants, they don’t need as many resources on the campaign).
+
+Second, we learned a lot about the demographic, campaign, additional attributes, and socioeconomic features that play a role in determining whether or not a client will subscribe to a term deposit. Here are some of the facts:
+
+•	**Call Length Matters** - The most important attribute associated with effectively predicting term deposit subscriptions was the duration of the last call with the client. Clients that spent several minutes on the phone with a bank representative were much more likely to subscribe.
+
+•	**Age Matters** – Opening a term deposit is much more prevalent among young people. While clients aged, 30 – 50 are much less likely to open a term deposit. This is probably due to the amount of expenses that these groups have in relation to other age groups.
+
+•	**Seasonality to this campaign** – Clients were much less likely to open term deposits during the summer months. Maybe this is due to vacation expenses, but the winter and early spring months had a far higher term deposit success rate.
+
+•	**Unknown Default Status prevents Term Deposits** – Overall, individuals with unknown default statuses and known defaults (even though known defaults is very rare) are much less likely to open a term deposit.
+
+•	**Clients engaged in previous marketing campaigns are more likely to sign up for new campaigns**
+
+•	**Lastly, when Euribor rates are lower, clients are likely to open a term deposit.** 
+
+
+
