@@ -1,0 +1,623 @@
+# Install all necessary libraries if it is not present
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+if(!require(stats)) install.packages("stats", repos = "http://cran.us.r-project.org")
+if(!require(pROC)) install.packages("pROC", repos = "http://cran.us.r-project.org")
+if(!require(class)) install.packages("class", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+
+# Load Packages
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(stats)
+library(pROC)
+library(class)
+library(randomForest)
+
+# Load Data
+## Read the data
+bank_marketing_data <- read.csv("bank-additional-full.csv", stringsAsFactors = FALSE, sep = ";")
+
+##Set predictor variable to categorical, since it was not imported that way
+bank_marketing_data$y <- as.factor(bank_marketing_data$y)
+
+##Evaluate the distribution of our predictor variable
+ggplot(bank_marketing_data, aes(x = y)) + 
+  geom_bar()
+
+table(bank_marketing_data$y)
+4640/(4640+36548)
+
+## Split the data into train and test data set
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(y = bank_marketing_data$y, times = 1, p = 0.2, list = FALSE)
+train_set <- bank_marketing_data[-test_index,]
+test_set <- bank_marketing_data[test_index,]
+
+## dimensions of train test splits
+dim(train_set)
+dim(test_set)
+
+# Make sure the proportion of yes and no values for predictor variable in train and test are similar.
+table(train_set$y)
+3712/(29238+3712)
+table(test_set$y)
+928/(928+7310)
+
+#Exploratory Data Analysis
+
+### Basic Exploratory Analysis
+
+## check for missing data
+sum(complete.cases(train_set))
+sum(complete.cases(test_set))
+
+## Look at first 5 rows
+head(train_set)
+
+## Get the summary of each variable in the data set
+summary(train_set)
+
+
+### Demographic Variable Analysis
+
+## Age
+age.table <- table(as.factor(train_set$age), train_set$y) 
+age.table.df <- as.data.frame.matrix(age.table)
+age.table.df$age <- rownames(age.table.df)
+age.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(age, no, yes, perc, total)
+age.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(age, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on age") + 
+  xlab("Age") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Job vs Term Deposit Analysis
+job.table <- table(as.factor(train_set$job), train_set$y) 
+job.table.df <- as.data.frame.matrix(job.table)
+job.table.df$jobs <- rownames(job.table.df)
+job.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(jobs, no, yes, perc, total)
+job.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(jobs, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per job") + 
+  xlab("Job Category") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Marital Status
+marital.table <- table(as.factor(train_set$marital), train_set$y) 
+marital.table.df <- as.data.frame.matrix(marital.table)
+marital.table.df$status <- rownames(marital.table.df)
+marital.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+marital.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per marital status") + 
+  xlab("Marital Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Education
+education.table <- table(as.factor(train_set$education), train_set$y) 
+education.table.df <- as.data.frame.matrix(education.table)
+education.table.df$status <- rownames(education.table.df)
+education.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+education.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits per education level") + 
+  xlab("Education Level") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Default
+default.table <- table(as.factor(train_set$default), train_set$y) 
+default.table.df <- as.data.frame.matrix(default.table)
+default.table.df$status <- rownames(default.table.df)
+default.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+default.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits with and without loan defaults") + 
+  xlab("Default Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Housing
+housing.table <- table(as.factor(train_set$housing), train_set$y) 
+housing.table.df <- as.data.frame.matrix(housing.table)
+housing.table.df$status <- rownames(housing.table.df)
+housing.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+housing.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients with house loans") + 
+  xlab("Housing Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Loan
+loan.table <- table(as.factor(train_set$loan), train_set$y) 
+loan.table.df <- as.data.frame.matrix(loan.table)
+loan.table.df$status <- rownames(loan.table.df)
+loan.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+loan.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients with personal loans") + 
+  xlab("Loan Status") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Contact
+contact.table <- table(as.factor(train_set$contact), train_set$y) 
+contact.table.df <- as.data.frame.matrix(contact.table)
+contact.table.df$status <- rownames(contact.table.df)
+contact.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+contact.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on contact type") + 
+  xlab("Contact Type") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Month
+month.table <- table(as.factor(train_set$month), train_set$y) 
+month.table.df <- as.data.frame.matrix(month.table)
+month.table.df$status <- rownames(month.table.df)
+month.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+month.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on last month of year that they were reached") + 
+  xlab("Month") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Day_of_week
+day_of_week.table <- table(as.factor(train_set$day_of_week), train_set$y) 
+day_of_week.table.df <- as.data.frame.matrix(day_of_week.table)
+day_of_week.table.df$status <- rownames(day_of_week.table.df)
+day_of_week.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+day_of_week.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients based on last contact day of week that they were reached") + 
+  xlab("Day of Week") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Duration
+### boxplot comparing variables
+train_set %>%
+  ggplot(aes(x=y, y=duration)) + 
+  geom_boxplot() + 
+  ggtitle("Duration of last call vs Term Deposit Subscription") + 
+  xlab("Subscribed to Term Deposit") +
+  ylab("Duration of Last Call")
+### calculated summary of duration when y == yes
+summary(train_set$duration[train_set$y=="yes"])
+### total number of subscriptions for perspective
+train_set %>%
+  filter(y == "yes") %>%
+  summarize(total = n())
+### calculated summary of duration when y == no
+summary(train_set$duration[train_set$y=="no"])
+### Total number of non-subscriptions for perspective
+train_set %>%
+  filter(y == "no") %>%
+  summarize(total = n())
+
+## Campaign
+campaign.table <- table(as.factor(train_set$campaign), train_set$y) 
+campaign.table.df <- as.data.frame.matrix(campaign.table)
+campaign.table.df$status <- rownames(campaign.table.df)
+campaign.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+campaign.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients number of contacts for the campaign") + 
+  xlab("Number of Contacts throughout the Campaign") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Duration
+### boxplot comparing variables
+train_set %>%
+  ggplot(aes(x=y, y=duration)) + 
+  geom_boxplot() + 
+  ggtitle("Duration of last call vs Term Deposit Subscription") + 
+  xlab("Subscribed to Term Deposit") +
+  ylab("Duration of Last Call")
+### calculated summary of duration when y == yes
+summary(train_set$duration[train_set$y=="yes"])
+### total number of subscriptions for perspective
+train_set %>%
+  filter(y == "yes") %>%
+  summarize(total = n())
+### calculated summary of duration when y == no
+summary(train_set$duration[train_set$y=="no"])
+### Total number of non-subscriptions for perspective
+train_set %>%
+  filter(y == "no") %>%
+  summarize(total = n())
+
+## PDAYS
+### review distribution of data
+hist(train_set$pdays)
+### review distribution when removing value 999
+train_set %>%
+  filter(pdays < 950) %>%
+  ggplot(aes(pdays)) +
+  geom_histogram()
+
+### review distribution when removing value 999 as compared to the term deposit
+train_set %>%
+       filter(pdays < 950) %>%
+       ggplot(aes(pdays)) +
+       geom_histogram() + 
+       facet_wrap(~ y)
+
+### For exploratory purposes, create a new data frame with pdays categorized and include predicted outcome variable
+test <- train_set %>%
+  mutate(pdays_category = ifelse(pdays <= 5, "5 days or less", 
+                          ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+                          ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+                          ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted"))))) %>%
+  select(pdays_category, y)
+
+### Review categorized effect on subscribing to term deposit
+test.table <- table(as.factor(test$pdays_category), test$y) 
+test.table.df <- as.data.frame.matrix(test.table)
+test.table.df$status <- rownames(test.table.df)
+test.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+test.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs days since last contact") + 
+  xlab("days since last contact") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Previous
+### boxplot comparing number of contacts before vs term deposit
+train_set %>%
+  ggplot(aes(x=y, y=previous)) + 
+  geom_boxplot() + 
+  ggtitle("Number of contacts performed before campaign vs Term Deposit Subscription") + 
+  xlab("Subscribed to Term Deposit") +
+  ylab("Number of contacts")
+
+##poutcome
+poutcome.table <- table(as.factor(train_set$poutcome), train_set$y) 
+poutcome.table.df <- as.data.frame.matrix(poutcome.table)
+poutcome.table.df$status <- rownames(poutcome.table.df)
+poutcome.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+poutcome.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs Prior Marketing Campaign Success") + 
+  xlab("Success of prior campaigns") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+## Emplyment variation Rate
+train_set %>%
+  ggplot(aes(x=y, y=emp.var.rate)) + 
+  geom_boxplot() +
+  ggtitle("Employment Variation Rate vs Term Deposit")
+  
+## Consumer Price Index
+train_set %>%
+  ggplot(aes(x=y, y=cons.price.idx)) + 
+  geom_boxplot() +
+  ggtitle("Consumer Price Index vs Term Deposit")
+
+## Consumer Confidence Index
+train_set %>%
+  ggplot(aes(x=y, y=cons.conf.idx)) + 
+  geom_boxplot() + 
+  ggtitle("Consumer Confidence Index vs Term Deposit")
+
+## Euribor 3 Month Rate
+train_set %>%
+  ggplot(aes(x=y, y=euribor3m)) + 
+  geom_boxplot() + 
+  ggtitle("Euribor 3 Month Rate vs Term Deposit")
+
+## Number of Employees
+train_set %>%
+  ggplot(aes(x=y, y=nr.employed)) + 
+  geom_boxplot() + 
+  ggtitle("Number of Employees vs Term Deposit")
+
+# Select the data to be used for model evaluation
+## Train Set 
+train_set_mini <- train_set %>%
+     select(age, job, education, default, contact, month, duration, campaign, pdays, poutcome, euribor3m, y)
+## Test Set
+test_set_mini <- test_set %>%
+  select(age, job, education, default, contact, month, duration, campaign, pdays, poutcome, euribor3m, y)
+
+# Feature Selection & Engineering
+## basic conversion to categorical data
+train_set_mini$job <- as.factor(train_set_mini$job)
+train_set_mini$education <- as.factor(train_set_mini$education)
+train_set_mini$default <- as.factor(train_set_mini$default)
+train_set_mini$contact <- as.factor(train_set_mini$contact)
+train_set_mini$month <- as.factor(train_set_mini$month)
+train_set_mini$poutcome <- as.factor(train_set_mini$poutcome)
+
+test_set_mini$job <- as.factor(test_set_mini$job)
+test_set_mini$education <- as.factor(test_set_mini$education)
+test_set_mini$default <- as.factor(test_set_mini$default)
+test_set_mini$contact <- as.factor(test_set_mini$contact)
+test_set_mini$month <- as.factor(test_set_mini$month)
+test_set_mini$poutcome <- as.factor(test_set_mini$poutcome)
+
+## Converting pdays and age to categories
+### Age
+train_set_mini <- train_set_mini %>%
+  mutate(age_cat = ifelse(age > 13 & age <= 19, "teen",
+                          ifelse(age >= 20 & age <= 25, "20-25",
+                                 ifelse(age >= 26 & age <= 30, "26-30",
+                                        ifelse(age >= 31 & age <= 35, "31-35",
+                                               ifelse(age >= 36 & age <= 40, "36-40",
+                                                      ifelse(age >= 41 & age <= 45, "41-45",
+                                                             ifelse(age >= 46 & age <= 50, "46-50",
+                                                                    ifelse(age >= 51 & age <= 55, "51-55",
+                                                                           ifelse(age>= 56 & age<= 60, "56-60", 
+                                                                                  ifelse(age >= 61 & age <= 65, "61-65",
+                                                                                         ifelse(age >= 66 & age <= 70, "66-70",
+                                                                                                ifelse(age >= 71 & age <=75, "71-75",
+                                                                                                       ifelse(age>= 76 & age<= 80, "79-80", "Over 80"))))))))))))))
+### Did we lose much variability with our new categorical age variable?
+### Age_cat
+age_cat.table <- table(as.factor(train_set_mini$age_cat), train_set_mini$y) 
+age_cat.table.df <- as.data.frame.matrix(age_cat.table)
+age_cat.table.df$status <- rownames(age_cat.table.df)
+age_cat.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>%
+  select(status, no, yes, perc, total)
+age_cat.table.df %>%
+  mutate(perc = (yes / (yes + no)) * 100,
+         total = yes + no) %>% 
+  ggplot(aes(x = reorder(status, -perc), y = perc)) + 
+  geom_bar(stat = "identity", fill = "#002a4e") +
+  ggtitle("Proportion of term deposits opened by clients vs Age Category") + 
+  xlab("Age Category") +
+  ylab("Percent of Clients who Opened Term Deposit") +
+  theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + 
+  geom_hline(yintercept = 11.2, linetype = "dashed", color = "red", size = 2) +
+  geom_text(aes(label = round(perc, 1)), size = 3, vjust = -0.25)
+
+### Apply to test set
+test_set_mini <- test_set_mini %>%
+  mutate(age_cat = ifelse(age > 13 & age <= 19, "teen",
+                          ifelse(age >= 20 & age <= 25, "20-25",
+                                 ifelse(age >= 26 & age <= 30, "26-30",
+                                        ifelse(age >= 31 & age <= 35, "31-35",
+                                               ifelse(age >= 36 & age <= 40, "36-40",
+                                                      ifelse(age >= 41 & age <= 45, "41-45",
+                                                             ifelse(age >= 46 & age <= 50, "46-50",
+                                                                    ifelse(age >= 51 & age <= 55, "51-55",
+                                                                           ifelse(age>= 56 & age<= 60, "56-60", 
+                                                                                  ifelse(age >= 61 & age <= 65, "61-65",
+                                                                                         ifelse(age >= 66 & age <= 70, "66-70",
+                                                                                                ifelse(age >= 71 & age <=75, "71-75",
+                                                                                                       ifelse(age>= 76 & age<= 80, "79-80", "Over 80"))))))))))))))
+
+### PDAYS
+train_set_mini <- train_set_mini %>%
+  mutate(pdays_category = ifelse(pdays <= 5, "5 days or less", 
+                                 ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+                                        ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+                                               ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted")))))
+
+### apply to test set
+test_set_mini <- test_set_mini %>%
+  mutate(pdays_category = ifelse(pdays <= 5, "5 days or less", 
+                                 ifelse(pdays >5 & pdays <= 10, "6 - 10 days", 
+                                        ifelse(pdays >10 & pdays <= 15, "11 - 15 days", 
+                                               ifelse(pdays >15 & pdays <= 35, "15 - 35 days", "Not Contacted")))))
+
+## Convert age and pdays categories to factors on both train and test mini data sets
+train_set_mini$age_cat <- as.factor(train_set_mini$age_cat)
+test_set_mini$age_cat <- as.factor(test_set_mini$age_cat)
+train_set_mini$pdays_category <- as.factor(train_set_mini$pdays_category)
+test_set_mini$pdays_category <- as.factor(test_set_mini$pdays_category)
+
+## Remove age and pdays from both train and test data sets
+train_set_mini <- train_set_mini[,-c(1,9)]
+test_set_mini <- test_set_mini[,-c(1,9)]
+
+## Normalization of Numeric Features
+min_duration <- min(train_set_mini$duration)
+max_duration <- max(train_set_mini$duration)
+min_campaign <- min(train_set_mini$campaign)
+max_campaign <- max(train_set_mini$campaign)
+min_euribor3m <- min(train_set_mini$euribor3m)
+max_euribor3m <- max(train_set_mini$euribor3m)
+
+train_set_mini <- train_set_mini %>%
+  mutate(duration_norm = (duration - min_duration)/(max_duration - min_duration),
+         campaign_norm = (campaign - min_campaign)/(max_campaign - min_campaign),
+         euribor3m_norm = (euribor3m - min_euribor3m)/(max_euribor3m - min_euribor3m))
+
+test_set_mini <- test_set_mini %>%
+  mutate(duration_norm = (duration - min_duration)/(max_duration - min_duration),
+         campaign_norm = (campaign - min_campaign)/(max_campaign - min_campaign),
+         euribor3m_norm = (euribor3m - min_euribor3m)/(max_euribor3m - min_euribor3m))
+
+train_set_mini <- train_set_mini[,-c(6,7,9)]
+test_set_mini <- test_set_mini[,-c(6,7,9)]
+
+
+# Model Selection
+## Logistic Regression
+logistic.train <- glm(y ~ ., data = train_set_mini, family = "binomial")
+## evaluating trained model
+summary(logistic.train)
+## predicting model on test data set
+logistic.predict <- test_set_mini
+logistic.predict$y_hat <- predict(logistic.train, newdata = test_set_mini, type = "response")
+
+## Evaluating Model using AUC and other characteristics
+roc(logistic.predict$y ~ logistic.predict$y_hat)
+## plotting AUC
+par(pty="s")
+roc_logistic <- roc(logistic.predict$y ~ logistic.predict$y_hat, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "blue", lwd = 4, print.auc =TRUE, print.auc.x=45)
+roc_logistic
+## Now lets identify the threshold we should use for the logistic regression model
+
+##KNN Model
+### first we must convert all of our factor variables to numeric variables for the knn model
+knn_train_set_mini <- train_set_mini
+knn_test_set_mini <- test_set_mini
+
+knn_train_set_mini$job <- as.numeric(knn_train_set_mini$job)
+knn_train_set_mini$education <- as.numeric(knn_train_set_mini$education)
+knn_train_set_mini$default <- as.numeric(knn_train_set_mini$default)
+knn_train_set_mini$contact <- as.numeric(knn_train_set_mini$contact)
+knn_train_set_mini$month <- as.numeric(knn_train_set_mini$month)
+knn_train_set_mini$poutcome <- as.numeric(knn_train_set_mini$poutcome)
+knn_train_set_mini$y <- as.numeric(knn_train_set_mini$y)
+knn_train_set_mini$age_cat <- as.numeric(knn_train_set_mini$age_cat)
+knn_train_set_mini$pdays_category <- as.numeric(knn_train_set_mini$pdays_category)
+
+knn_test_set_mini$job <- as.numeric(knn_test_set_mini$job)
+knn_test_set_mini$education <- as.numeric(knn_test_set_mini$education)
+knn_test_set_mini$default <- as.numeric(knn_test_set_mini$default)
+knn_test_set_mini$contact <- as.numeric(knn_test_set_mini$contact)
+knn_test_set_mini$month <- as.numeric(knn_test_set_mini$month)
+knn_test_set_mini$poutcome <- as.numeric(knn_test_set_mini$poutcome)
+knn_test_set_mini$y <- as.numeric(knn_test_set_mini$y)
+knn_test_set_mini$age_cat <- as.numeric(knn_test_set_mini$age_cat)
+knn_test_set_mini$pdays_category <- as.numeric(knn_test_set_mini$pdays_category)
+
+### Run and Plot AUC for KNN Algorithm
+knn_model <- knn(train = knn_train_set_mini, test = knn_test_set_mini, cl = knn_train_set_mini$y, k = 10, prob = TRUE)
+knn_prob <- attr(knn_model, "prob")
+knn_prob <- 2*ifelse(knn_model == "-1", 1-knn_prob, knn_prob) - 1
+roc_knn <- roc(knn_test_set_mini$y ~ knn_prob, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "green", lwd = 4, print.auc =TRUE, print.auc.x=45)
+roc_knn
+
+##Random Forest Model
+model.randomforest <- randomForest(y ~ ., data = train_set_mini )
+model.randomforest
+## measure variable importance from random Forest
+varImpPlot(model.randomforest)
+## predict on new test set
+rf_test_set_mini <- test_set_mini
+rf_test_set_mini <- rbind(train_set_mini[1,], rf_test_set_mini)
+rf_test_set_mini <- rf_test_set_mini[-1,]
+rf.predict <- predict(model.randomforest, newdata = rf_test_set_mini[,-7])
+rf.predict <- as.numeric(rf.predict)
+roc_randomforest <- roc(rf_test_set_mini$y ~ rf.predict, plot=TRUE, legacy.axes = TRUE, percent = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", col = "red", lwd = 4, print.auc =TRUE)
+
+## Random Forest AUC
+roc_randomforest
+
+## Comparing AUCs for the three models
+plot(roc_logistic, col = "blue", main = "ROC", legacy.axes = TRUE, xlab = "False Positive Percentage", ylab = "True Positive Percentage", print.auc = TRUE)
+plot(roc_knn, col = "red", add = TRUE, print.auc = TRUE, print.auc.y = 42)
+plot(roc_randomforest, col = "#228B22", add = TRUE, print.auc = TRUE, print.auc.y = 33)
